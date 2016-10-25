@@ -1,12 +1,15 @@
 """GIT wrapper"""
-import sys
 import getpass
 from enum import IntEnum
 from pygit2 import GIT_SORT_TOPOLOGICAL, GIT_SORT_REVERSE
 from colorama import Fore, init
 from .ftpwrapper import FtpWrapper
-from .gitconfig import GitConfig
+from .ftpconfig import FtpConfig, ServerNotExist
 init()
+
+
+class EmptyList(Exception):
+    pass
 
 
 class DiffFile(IntEnum):
@@ -17,29 +20,23 @@ class DiffFile(IntEnum):
 
 class GitWrapper:
     """GitWrapper class"""
-    latest = '/'
     ftpwrapper = None
+    ftpname = None
 
-    def __init__(self, repo, ftpname):
+    def __init__(self, repo):
         """Initialize"""
         self.repo = repo
+        self.ftpconfig = FtpConfig()
 
-        if ftpname != None:
-            self.ftpname = ftpname
-            self.gitconfig = GitConfig(self.repo)
+    def load_configuration(self, section):
+        """Load server configuration"""
+        if section != None:
+            self.ftpname = section
 
-            self.type = self.gitconfig.get('ftp.' + str(ftpname) + '.type')
-            self.host = self.gitconfig.get('ftp.' + str(ftpname) + '.host')
-            self.username = self.gitconfig.get('ftp.' + str(ftpname) + '.username')
-            self.password = self.gitconfig.get('ftp.' + str(ftpname) + '.password')
-            self.localdir = self.gitconfig.get('ftp.' + str(ftpname) + '.localdir')
-            self.remotedir = self.gitconfig.get('ftp.' + str(ftpname) + '.remotedir')
-            self.latest = self.gitconfig.get('ftp.' + str(ftpname) + '.latest')
-
-
-    def add_server(self, argv):
+    def add_server(self, section, argv):
         """add ftp server"""
         print(Fore.YELLOW + 'FTP; add server settings' + Fore.RESET)
+        self.load_configuration(section)
 
         # get ftp url
         try:
@@ -56,60 +53,106 @@ class GitWrapper:
 
         # set localdir input string
         localdir_input_str = 'local directory'
-        if self.localdir is None:
+        section_localdir = self.ftpconfig.get_item(self.ftpname, 'localdir')
+        if section_localdir is None:
             localdir_input_str += ': '
         else:
-            localdir_input_str += ' (' + self.localdir + ')'
+            localdir_input_str += ' (' + section_localdir + ')'
 
         localdir = input(localdir_input_str)
         if localdir == '':
-            localdir = self.localdir
+            localdir = section_localdir
 
         # set remotedir input string
         remotedir_input_str = 'remote directory'
-        if self.remotedir is None:
+        section_remotedir = self.ftpconfig.get_item(self.ftpname, 'remotedir')
+        if section_remotedir is None:
             remotedir_input_str += ': '
         else:
-            remotedir_input_str += ' (' + self.remotedir + ')'
+            remotedir_input_str += ' (' + section_remotedir + ')'
 
         remotedir = input(remotedir_input_str)
         if remotedir == '':
-            remotedir = self.remotedir
+            remotedir = section_remotedir
 
-        self.gitconfig.set('ftp.' + str(self.ftpname) + '.type', 'ftp')
-        self.gitconfig.set('ftp.' + str(self.ftpname) + '.host', str(ftpurl))
-        self.gitconfig.set('ftp.' + str(self.ftpname) + '.username', str(username))
-        self.gitconfig.set('ftp.' + str(self.ftpname) + '.password', str(pswd))
-        self.gitconfig.set('ftp.' + str(self.ftpname) + '.localdir', str(localdir))
-        self.gitconfig.set('ftp.' + str(self.ftpname) + '.remotedir', str(remotedir))
+        self.ftpconfig.set(self.ftpname, ftpurl, username, pswd, remotedir, localdir)
 
         print(Fore.GREEN + "FTP server '" + str(self.ftpname) + "' added." + Fore.RESET)
 
-    def deploy(self):
+    def remove(self, section):
+        if section is None:
+            try:
+                section = self.choice_section()
+            except (ServerNotExist, EmptyList):
+                return None
+
+        if self.ftpconfig.remove_section(section):
+            print(Fore.GREEN + "FTP server '" + section + "' removed successfully." + Fore.RESET)
+
+    def servers(self):
+        """List servers"""
+        print(Fore.YELLOW + 'List of servers' + Fore.RESET)
+        list = self.ftpconfig.list_sections()
+        
+        for idx, val in enumerate(list):
+            print(val)
+        
+
+    def deploy(self, section):
         """Deploy changes"""
         print(Fore.YELLOW + 'FTP; deploy to server' + Fore.RESET)
 
-        sexists = self.server_exists(self.ftpname)
-        if not sexists:
+        if section is None:
+            try:
+                section = self.choice_section()
+            except (ServerNotExist, EmptyList):
+                return None
+
+        self.load_configuration(section)
+
+        # check if configuration exists
+        if self.ftpconfig.has_section(self.ftpname):
+            # get latest sync hash from config
+            try:
+                latest_sync_hash = self.ftpconfig.get_item(self.ftpname, 'latest')
+            except:
+                latest_sync_hash = ""
+
+            # count how much you are behind with syncing
+            sync_behind_count = self.find_sync_offset(latest_sync_hash)
+            if sync_behind_count == 0:
+                print(Fore.GREEN + "Already up to date!")
+                return None
+            elif sync_behind_count == 1:
+                self.sync_latest_commit()
+            elif sync_behind_count > 1:
+                self.make_sync_choice(sync_behind_count, latest_sync_hash)
+        else:
             print(Fore.RED + 'Server does not exists' + Fore.RESET)
             return None
 
-        # get latest sync hash from config
-        try:
-            latest_sync_hash = self.gitconfig.get('ftp.' + str(self.ftpname) + '.latest')
-			    # self.repo.config.get_multivar('ftp.' + str(self.ftpname) + '.latest', None).next()
-        except:
-            latest_sync_hash = ""
+    def choice_section(self):
+        """Choose section"""
+        list = self.ftpconfig.list_sections()
 
-        # count how much you are behind with syncing
-        sync_behind_count = self.find_sync_offset(latest_sync_hash)
-        if sync_behind_count == 0:
-            print(Fore.GREEN + "Already up to date!")
-            return None
-        elif sync_behind_count == 1:
-            self.sync_latest_commit()
-        elif sync_behind_count > 1:
-            self.make_sync_choice(sync_behind_count, latest_sync_hash)
+        if len(list) == 0:
+            print(Fore.RED + 'Add a server before deploying!' + Fore.RESET)
+            raise EmptyList()
+
+        print(Fore.CYAN + 'Which configuration do you want to use?:' + Fore.RESET)
+
+        for idx, val in enumerate(list):
+            print(idx, val)
+
+        use_section = input('section: ')
+        try:
+            index = int(use_section)
+            section = list[index]
+            print("")
+            return section
+        except (ValueError, IndexError):
+            print(Fore.RED + 'Selected server does not exists!' + Fore.RESET)
+            raise ServerNotExist()
 
     def make_sync_choice(self, sync_behind_count, latest_sync_hash):
         """Make sync choice"""
@@ -157,9 +200,9 @@ class GitWrapper:
         latest_commit = head.get_object()
 
         # get latest synced commit
-        if latest_sync_hash == '':
+        if latest_sync_hash is None:
             for commit in self.repo.walk(self.repo.head.target,\
-			  GIT_SORT_TOPOLOGICAL | GIT_SORT_REVERSE):
+              GIT_SORT_TOPOLOGICAL | GIT_SORT_REVERSE):
                 latest_synced_commit = self.repo.get(commit.id)
                 break
         else:
@@ -170,8 +213,8 @@ class GitWrapper:
 
         # update latest commit hash
         print(Fore.GREEN + "FTP catched up with latest commit: " +\
-		  str(latest_commit.id) + Fore.RESET)
-        self.set_latest_sync_hash(self.latest, latest_commit.id)
+          str(latest_commit.id) + Fore.RESET)
+        self.set_latest_sync_hash(latest_commit.id)
 
     def sync_latest_commit(self):
         """Sync only the latest commit"""
@@ -188,18 +231,18 @@ class GitWrapper:
 
         # update latest commit hash
         print(Fore.GREEN + "FTP synced with latest commit: " + str(latest_commit.id) + Fore.RESET)
-        self.set_latest_sync_hash(self.latest, latest_commit.id)
+        self.set_latest_sync_hash(latest_commit.id)
 
     def cherry_pick_commit(self, latest_sync_hash):
         """Cherry pick commits to sync"""
         print(Fore.YELLOW + "Choose commits to sync" + Fore.RESET)
 
         start = False
-        if latest_sync_hash == '':
+        if latest_sync_hash is None:
             start = True
 
         for commit in self.repo.walk(self.repo.head.target,\
-		  GIT_SORT_TOPOLOGICAL | GIT_SORT_REVERSE):
+          GIT_SORT_TOPOLOGICAL | GIT_SORT_REVERSE):
             # find start point
             if not start:
                 if str(commit.id) == str(latest_sync_hash):
@@ -208,8 +251,7 @@ class GitWrapper:
 
             # start syncing
             print(Fore.CYAN + str(commit.id) + Fore.RESET + " - " + Fore.GREEN +\
-			  "(" + str(commit.committer.offset) + ")" + Fore.RESET + " " + commit.message.replace('\n', ' ').replace('\r', '').strip() + Fore.MAGENTA + " - " + str(commit.committer.name) + Fore.RESET) # str(commit.committer.name)
-
+              "(" + str(commit.committer.offset) + ")" + Fore.RESET + " " + commit.message.replace('\n', ' ').replace('\r', '').strip() + Fore.MAGENTA + " - " + str(commit.committer.name) + Fore.RESET)
 
             sync_commit = input('Do you want to sync this commit? (Y): ')
             if sync_commit == "y" or sync_commit == "Y" or sync_commit == "":
@@ -218,7 +260,7 @@ class GitWrapper:
                 self.process_diff_files(parent, commit)
 
                 # set latest hash
-                self.set_latest_sync_hash(self.latest, commit.id)
+                self.set_latest_sync_hash(commit.id)
             else:
                 print("Commit skipped")
 
@@ -236,7 +278,13 @@ class GitWrapper:
 
     def process_diff_files(self, parent, commit):
         """Process diff"""
-        self.ftpwrapper = FtpWrapper(self.host, self.remotedir, self.username, self.password)
+        host = self.ftpconfig.get_item(self.ftpname, 'host')
+        remotedir = self.ftpconfig.get_item(self.ftpname, 'remotedir')
+        localdir = self.ftpconfig.get_item(self.ftpname, 'localdir')
+        username = self.ftpconfig.get_item(self.ftpname, 'username')
+        password = self.ftpconfig.get_item(self.ftpname, 'password')
+
+        self.ftpwrapper = FtpWrapper(host, remotedir, username, password)
 
         if parent is None:
             #get diff for commit
@@ -251,9 +299,9 @@ class GitWrapper:
 
             process = False
             remote_file_name = delta.new_file.path
-            if self.localdir != '':
-                process = delta.new_file.path.startswith(self.localdir, 0, len(self.localdir))
-                remote_file_name = remote_file_name.replace(self.localdir, '', 1)
+            if localdir != '':
+                process = delta.new_file.path.startswith(localdir, 0, len(localdir))
+                remote_file_name = remote_file_name.replace(localdir, '', 1)
                 remote_file_name = remote_file_name.strip("/")
             else:
                 process = True
@@ -266,23 +314,9 @@ class GitWrapper:
                 elif delta.status == DiffFile.changed:        # file changed
                     self.ftpwrapper.upload(delta.new_file.path, remote_file_name)
 
-    def server_exists(self, ftpname):
-        """Server exists"""
-        result = False
-        try:
-            server = self.gitconfig.get('ftp.' + str(ftpname) + '.type')
-            if server != None:
-                result = True
-        except StopIteration:
-            result = False
-
-        return result
-
-    def set_latest_sync_hash(self, replace, commithash):
+    def set_latest_sync_hash(self, commithash):
         """Update hash"""
         try:
-            print(replace)
-            self.gitconfig.set('ftp.' + str(self.ftpname) + '.latest', str(commithash))
-            self.latest = commithash
+            self.ftpconfig.set_item(self.ftpname, 'latest', commithash)
         except:
             print("error updating hash")
