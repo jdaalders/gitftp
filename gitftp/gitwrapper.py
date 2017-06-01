@@ -5,6 +5,7 @@ from pygit2 import GIT_SORT_TOPOLOGICAL, GIT_SORT_REVERSE
 from colorama import Fore, init
 from .ftpwrapper import FtpWrapper
 from .ftpconfig import FtpConfig, ServerNotExist
+from .githash import GitHash
 init()
 
 
@@ -76,6 +77,9 @@ class GitWrapper:
             remotedir = section_remotedir
 
         self.ftpconfig.set(self.ftpname, ftpurl, username, pswd, remotedir, localdir)
+		
+		# create hash file
+        self.githash = GitHash(self.ftpname, localdir)
 
         print(Fore.GREEN + "FTP server '" + str(self.ftpname) + "' added." + Fore.RESET)
 
@@ -114,9 +118,11 @@ class GitWrapper:
         if self.ftpconfig.has_section(self.ftpname):
             # get latest sync hash from config
             try:
-                latest_sync_hash = self.ftpconfig.get_item(self.ftpname, 'latest')
-            except:
-                latest_sync_hash = ""
+                localdir = self.ftpconfig.get_item(self.ftpname, 'localdir')
+                githash = GitHash(self.ftpname, localdir)
+                latest_sync_hash = githash.get()
+            except Exception as error:
+                latest_sync_hash = None
 
             # count how much you are behind with syncing
             sync_behind_count = self.find_sync_offset(latest_sync_hash)
@@ -317,6 +323,8 @@ class GitWrapper:
     def set_latest_sync_hash(self, commithash):
         """Update hash"""
         try:
-            self.ftpconfig.set_item(self.ftpname, 'latest', commithash)
-        except:
+            localdir = self.ftpconfig.get_item(self.ftpname, 'localdir')
+            self.githash = GitHash(self.ftpname, localdir)
+            self.githash.update(commithash)
+        except Exception as error:
             print("error updating hash")

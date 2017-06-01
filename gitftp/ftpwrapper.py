@@ -32,6 +32,28 @@ class FtpWrapper(object):
         """Set root directory on the server"""
         self.ftp.cwd('/'+self.root_dir)
 
+    def download(self, remote, localpath, verbose=True):
+        """Download file from the server"""
+        self.set_root_dir()
+        if verbose == True:
+            print(Fore.CYAN + "Download file: " + remote + Fore.RESET)
+		
+        try:
+            # open file path
+            (filepath, filename) = os.path.split(remote)
+            self.open_remote_file_path(filepath)
+			
+            # create local file path
+            realpath = os.path.join(os.getcwd(), localpath)
+            file = open(str(realpath) + "/" + str(filename), 'wb')
+            self.ftp.retrbinary('RETR ' + remote, file.write)
+        except Exception as error:
+            print('File does not exists')
+
+        if verbose == True:
+            print("File: '" + remote + "' downloaded " + Fore.GREEN + "successfully")
+            print(Fore.RESET)
+
     def upload(self, localpath, path):
         """Upload file to the server"""
         self.set_root_dir()
