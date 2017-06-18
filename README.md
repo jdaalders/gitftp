@@ -17,13 +17,13 @@ $ git ftp add production ftp://example.com
 FTP: add server settings
 
 # Fill in the ftp username
-username: 
+username:
 
 # Fill in the ftp password
-password: 
+password:
 
 # Fill in the ftp password
-local directory: 
+local directory:
 
 # Fill in the ftp password
 remote directory:
@@ -75,4 +75,15 @@ If your behind more then one commits the deploy command will give you a few opti
 - [ConfigParser](https://docs.python.org/2/library/configparser.html#module-ConfigParser)
 - [Colorama](https://pypi.python.org/pypi/colorama)
 
+### Build
+Build a distribution version can be done by installing 'pyinstaller'. pip install pyinstaller
+After installing pyinstaller run:
+```bash
+pyinstaller --onefile git-ftp.py
+```
 
+Copy the executable to the git directory.
+On a Mac it's:
+```bash
+sudo cp dist/git-ftp/git-ftp /usr/local/git/bin/git-ftp
+```
