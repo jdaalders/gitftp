@@ -5,6 +5,8 @@ from colorama import Fore, init
 from pygit2 import GIT_SORT_TOPOLOGICAL, GIT_SORT_REVERSE
 from gitftp import GitWrapper
 
+VERSION = "1.0.1"
+
 try:
     repo = pygit2.Repository('.')
 except:
@@ -46,6 +48,9 @@ def main(argv):
     if command == 'servers':
         wrapper = GitWrapper(repo)
         wrapper.servers()
+
+    if command == '-v':
+        print("GitFTP version: '" + str(VERSION) + "'")
 
 
 
