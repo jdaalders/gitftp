@@ -85,5 +85,5 @@ pyinstaller --onefile git-ftp.py
 Copy the executable to the git directory.
 On a Mac it's:
 ```bash
-sudo cp dist/git-ftp/git-ftp /usr/local/git/bin/git-ftp
+sudo cp dist/git-ftp /usr/local/git/bin/git-ftp
 ```
