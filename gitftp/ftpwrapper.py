@@ -37,12 +37,12 @@ class FtpWrapper(object):
         self.set_root_dir()
         if verbose == True:
             print(Fore.CYAN + "Download file: " + remote + Fore.RESET)
-		
+
         try:
             # open file path
             (filepath, filename) = os.path.split(remote)
             self.open_remote_file_path(filepath)
-			
+
             # create local file path
             realpath = os.path.join(os.getcwd(), localpath)
             file = open(str(realpath) + "/" + str(filename), 'wb')
@@ -128,10 +128,13 @@ class FtpWrapper(object):
     def is_current_directory_empty(self):
         """Check if current directory is empty"""
         ret = []
-        self.ftp.dir("", ret.append)
+        try:
+            self.ftp.dir("", ret.append)
 
-        if len(ret) == 0:
-            return True
+            if len(ret) == 0:
+                return True
+        except Exception as error:
+            print(error)
 
         return False
 
